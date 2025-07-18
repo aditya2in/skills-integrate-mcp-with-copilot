@@ -3,28 +3,72 @@ document.addEventListener("DOMContentLoaded", () => {
   const activitySelect = document.getElementById("activity");
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
+  const searchInput = document.getElementById("search-input");
+  const categoryFilter = document.getElementById("category-filter");
+  const sortSelect = document.getElementById("sort-select");
+  let allActivities = {};
 
   // Function to fetch activities from API
   async function fetchActivities() {
     try {
       const response = await fetch("/activities");
       const activities = await response.json();
+      allActivities = activities;
+      renderActivities();
+      populateCategoryFilter();
+      populateActivitySelect();
+    } catch (error) {
+      activitiesList.innerHTML =
+        "<p>Failed to load activities. Please try again later.</p>";
+      console.error("Error fetching activities:", error);
+    }
+  }
 
-      // Clear loading message
-      activitiesList.innerHTML = "";
+  function getFilteredActivities() {
+    let filtered = Object.entries(allActivities);
+    // Filter by category
+    const selectedCategory = categoryFilter?.value || "";
+    if (selectedCategory) {
+      filtered = filtered.filter(([_, details]) =>
+        details.category === selectedCategory
+      );
+    }
+    // Search
+    const search = searchInput?.value?.toLowerCase() || "";
+    if (search) {
+      filtered = filtered.filter(([name, details]) =>
+        name.toLowerCase().includes(search) ||
+        (details.description && details.description.toLowerCase().includes(search))
+      );
+    }
+    // Sort
+    const sortBy = sortSelect?.value || "name";
+    filtered.sort((a, b) => {
+      if (sortBy === "name") {
+        return a[0].localeCompare(b[0]);
+      } else if (sortBy === "time") {
+        // Assume details.schedule exists for sorting
+        return (a[1].schedule || "").localeCompare(b[1].schedule || "");
+      }
+      return 0;
+    });
+    return filtered;
+  }
 
-      // Populate activities list
-      Object.entries(activities).forEach(([name, details]) => {
-        const activityCard = document.createElement("div");
-        activityCard.className = "activity-card";
-
-        const spotsLeft =
-          details.max_participants - details.participants.length;
-
-        // Create participants HTML with delete icons instead of bullet points
-        const participantsHTML =
-          details.participants.length > 0
-            ? `<div class="participants-section">
+  function renderActivities() {
+    activitiesList.innerHTML = "";
+    const filtered = getFilteredActivities();
+    if (filtered.length === 0) {
+      activitiesList.innerHTML = "<p>No activities found.</p>";
+      return;
+    }
+    filtered.forEach(([name, details]) => {
+      const activityCard = document.createElement("div");
+      activityCard.className = "activity-card";
+      const spotsLeft = details.max_participants - details.participants.length;
+      const participantsHTML =
+        details.participants.length > 0
+          ? `<div class="participants-section">
               <h5>Participants:</h5>
               <ul class="participants-list">
                 ${details.participants
@@ -35,36 +79,55 @@ document.addEventListener("DOMContentLoaded", () => {
                   .join("")}
               </ul>
             </div>`
-            : `<p><em>No participants yet</em></p>`;
+          : `<p><em>No participants yet</em></p>`;
+      activityCard.innerHTML = `
+        <h4>${name}</h4>
+        <p>${details.description}</p>
+        <p><strong>Schedule:</strong> ${details.schedule}</p>
+        <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
+        <div class="participants-container">
+          ${participantsHTML}
+        </div>
+      `;
+      activitiesList.appendChild(activityCard);
+    });
+    // Add event listeners to delete buttons
+    document.querySelectorAll(".delete-btn").forEach((button) => {
+      button.addEventListener("click", handleUnregister);
+    });
+  }
 
-        activityCard.innerHTML = `
-          <h4>${name}</h4>
-          <p>${details.description}</p>
-          <p><strong>Schedule:</strong> ${details.schedule}</p>
-          <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
-          <div class="participants-container">
-            ${participantsHTML}
-          </div>
-        `;
-
-        activitiesList.appendChild(activityCard);
-
-        // Add option to select dropdown
-        const option = document.createElement("option");
-        option.value = name;
-        option.textContent = name;
-        activitySelect.appendChild(option);
-      });
-
-      // Add event listeners to delete buttons
-      document.querySelectorAll(".delete-btn").forEach((button) => {
-        button.addEventListener("click", handleUnregister);
-      });
-    } catch (error) {
-      activitiesList.innerHTML =
-        "<p>Failed to load activities. Please try again later.</p>";
-      console.error("Error fetching activities:", error);
+  function populateCategoryFilter() {
+    if (!categoryFilter) return;
+    // Get unique categories from allActivities
+    const categories = new Set();
+    Object.values(allActivities).forEach((details) => {
+      if (details.category) categories.add(details.category);
+    });
+    // Remove all except first option
+    while (categoryFilter.options.length > 1) {
+      categoryFilter.remove(1);
     }
+    categories.forEach((cat) => {
+      const opt = document.createElement("option");
+      opt.value = cat;
+      opt.textContent = cat;
+      categoryFilter.appendChild(opt);
+    });
+  }
+
+  function populateActivitySelect() {
+    if (!activitySelect) return;
+    // Remove all except first option
+    while (activitySelect.options.length > 1) {
+      activitySelect.remove(1);
+    }
+    Object.keys(allActivities).forEach((name) => {
+      const option = document.createElement("option");
+      option.value = name;
+      option.textContent = name;
+      activitySelect.appendChild(option);
+    });
   }
 
   // Handle unregister functionality
@@ -154,6 +217,11 @@ document.addEventListener("DOMContentLoaded", () => {
       console.error("Error signing up:", error);
     }
   });
+
+  // Toolbar event listeners
+  if (searchInput) searchInput.addEventListener("input", renderActivities);
+  if (categoryFilter) categoryFilter.addEventListener("change", renderActivities);
+  if (sortSelect) sortSelect.addEventListener("change", renderActivities);
 
   // Initialize app
   fetchActivities();
